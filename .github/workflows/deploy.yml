@@ -50,12 +50,12 @@ jobs:
             
             # Pull the latest changes from main
             git pull origin main
-            
+            cd app/ 
             # Check and update dependencies dynamically within the app folder
             NEW_HASH=$(md5sum requirements.txt | cut -d' ' -f1)
             OLD_HASH=$(cat .req_hash 2>/dev/null || echo "")
             if [ "$OLD_HASH" != "$NEW_HASH" ]; then
-              cd /app && venv/bin/python -m pip install --quiet -r requirements.txt
+              venv/bin/python -m pip install --quiet -r requirements.txt
               echo "$NEW_HASH" > .req_hash
             fi
 
