@@ -26,16 +26,20 @@ jobs:
 
       - name: Build application
         id: build
+        continue-on-error: false
         run: |
-          # Your build commands here
+          # TODO: replace with your actual build command, e.g.:
+          # pip install -r requirements.txt
           echo "build_end_ts=$(date +%s)" >> "$GITHUB_OUTPUT"
 
       - name: Run tests
         id: test
+        continue-on-error: false
         run: |
-          # Your test commands here
+          # TODO: replace with your actual test command, e.g.:
+          # pip install pytest && pytest
           echo "test_end_ts=$(date +%s)" >> "$GITHUB_OUTPUT"
-          exit 1
+
       - name: Deploy to app server
         id: deploy
         run: |
@@ -44,14 +48,9 @@ jobs:
 
           ssh -o StrictHostKeyChecking=no appuser@${{ secrets.APP_SERVER_IP }} << 'ENDSSH'
             set -euo pipefail
-            
-            # Navigate to the explicit application directory path
-            cd /opt/demo-app
-            
-            # Pull the latest changes from main
+            cd /home/appuser/app
             git pull origin main
-            cd app/ 
-            # Check and update dependencies dynamically within the app folder
+
             NEW_HASH=$(md5sum requirements.txt | cut -d' ' -f1)
             OLD_HASH=$(cat .req_hash 2>/dev/null || echo "")
             if [ "$OLD_HASH" != "$NEW_HASH" ]; then
@@ -59,11 +58,17 @@ jobs:
               echo "$NEW_HASH" > .req_hash
             fi
 
-            # Restart the systemd application unit
-            sudo systemctl restart app || sudo systemctl start app
+            sudo systemctl restart app
           ENDSSH
 
           echo "deploy_ts=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Capture incident timestamps
+        id: incident
+        if: always()
+        run: |
+          echo "incident_start_ts=${{ steps.deploy.outputs.deploy_ts || steps.timestamps.outputs.trigger_ts }}" >> "$GITHUB_OUTPUT"
+          echo "incident_end_ts=$(date +%s)" >> "$GITHUB_OUTPUT"
 
       - name: Push DORA metrics to Prometheus Pushgateway
         if: always()
@@ -74,21 +79,32 @@ jobs:
           BUILD_END_TS:      ${{ steps.build.outputs.build_end_ts }}
           TEST_END_TS:       ${{ steps.test.outputs.test_end_ts }}
           DEPLOY_TS:         ${{ steps.deploy.outputs.deploy_ts }}
+          INCIDENT_START_TS: ${{ steps.incident.outputs.incident_start_ts }}
+          INCIDENT_END_TS:   ${{ steps.incident.outputs.incident_end_ts }}
           COMMIT_SHA:        ${{ steps.timestamps.outputs.commit_sha }}
           WORKFLOW:          ${{ github.workflow }}
           RUN_ID:            ${{ github.run_id }}
           BRANCH:            ${{ github.ref_name }}
           ACTOR:             ${{ github.actor }}
+          BUILD_OUTCOME:     ${{ steps.build.outcome }}
+          TEST_OUTCOME:      ${{ steps.test.outcome }}
+          DEPLOY_OUTCOME:    ${{ steps.deploy.outcome }}
         run: |
           set -euo pipefail
+
           NOW=$(date +%s)
 
-          if [ "${{ job.status }}" = "success" ]; then
-            RESULT="success"
-          elif [ "${{ steps.deploy.outcome }}" = "failure" ]; then
+          # Determine result based on each step outcome explicitly
+          if [ "${BUILD_OUTCOME}" = "failure" ]; then
             RESULT="failure"
+          elif [ "${TEST_OUTCOME}" = "failure" ]; then
+            RESULT="failure"
+          elif [ "${DEPLOY_OUTCOME}" = "failure" ]; then
+            RESULT="failure"
+          elif [ "${DEPLOY_OUTCOME}" = "success" ]; then
+            RESULT="success"
           else
-            RESULT="pipeline_interrupted"
+            RESULT="rollback"
           fi
 
           LEAD_TIME=$(( ${DEPLOY_TS:-$NOW} - ${COMMIT_TS:-$NOW} ))
@@ -96,34 +112,44 @@ jobs:
           BUILD_DURATION=$(( ${BUILD_END_TS:-$NOW} - ${TRIGGER_TS:-$NOW} ))
           TEST_DURATION=$(( ${TEST_END_TS:-$NOW} - ${BUILD_END_TS:-$NOW} ))
 
+          if [ "${RESULT}" != "success" ]; then
+            INCIDENT_DURATION=$(( ${INCIDENT_END_TS:-$NOW} - ${INCIDENT_START_TS:-$NOW} ))
+          else
+            INCIDENT_DURATION=0
+          fi
+
           cat <<EOF | curl --silent --max-time 10 --data-binary @- \
-            "${PUSHGATEWAY_URL}/metrics/job/github_dora/instance/ci_pipeline"
-          
+            "${PUSHGATEWAY_URL}/metrics/job/github_actions/instance/${RUN_ID}"
           # HELP github_actions_deployments_total Total deployment count by result
           # TYPE github_actions_deployments_total counter
-          github_actions_deployments_total{environment="production",result="${RESULT}",workflow="${WORKFLOW}",branch="${BRANCH}",run_id="${RUN_ID}"} 1
+          github_actions_deployments_total{environment="production",result="${RESULT}",workflow="${WORKFLOW}",branch="${BRANCH}",actor="${ACTOR}"} 1
 
           # HELP github_actions_lead_time_seconds Commit-to-production duration in seconds
           # TYPE github_actions_lead_time_seconds gauge
-          github_actions_lead_time_seconds{workflow="${WORKFLOW}",commit="${COMMIT_SHA}",result="${RESULT}"} ${LEAD_TIME}
+          github_actions_lead_time_seconds{workflow="${WORKFLOW}",commit="${COMMIT_SHA}"} ${LEAD_TIME}
 
           # HELP github_actions_pipeline_duration_seconds Full pipeline execution time in seconds
           # TYPE github_actions_pipeline_duration_seconds gauge
-          github_actions_pipeline_duration_seconds{workflow="${WORKFLOW}",run_id="${RUN_ID}",result="${RESULT}"} ${PIPELINE_DURATION}
+          github_actions_pipeline_duration_seconds{workflow="${WORKFLOW}"} ${PIPELINE_DURATION}
 
           # HELP github_actions_build_duration_seconds Build step duration in seconds
           # TYPE github_actions_build_duration_seconds gauge
-          github_actions_build_duration_seconds{workflow="${WORKFLOW}",run_id="${RUN_ID}"} ${BUILD_DURATION}
+          github_actions_build_duration_seconds{workflow="${WORKFLOW}"} ${BUILD_DURATION}
 
           # HELP github_actions_test_duration_seconds Test step duration in seconds
           # TYPE github_actions_test_duration_seconds gauge
-          github_actions_test_duration_seconds{workflow="${WORKFLOW}",run_id="${RUN_ID}"} ${TEST_DURATION}
+          github_actions_test_duration_seconds{workflow="${WORKFLOW}"} ${TEST_DURATION}
+
+          # HELP github_actions_incident_duration_seconds Time from deploy failure to resolution
+          # TYPE github_actions_incident_duration_seconds gauge
+          github_actions_incident_duration_seconds{workflow="${WORKFLOW}",result="${RESULT}"} ${INCIDENT_DURATION}
           EOF
 
-          echo "DORA metrics pushed: result=${RESULT}, lead_time=${LEAD_TIME}s"
+          echo "DORA metrics pushed: result=${RESULT}, lead_time=${LEAD_TIME}s, pipeline=${PIPELINE_DURATION}s"
 
       - name: Notify deployment failure
-        if: failure() && steps.deploy.outcome == 'failure'
+        if: failure()
         run: |
-          echo "Production deployment failed. CFR alert firing."
+          echo "Deployment failed. CFR alert will fire in Prometheus within 10 minutes."
+          echo "Check #DevOps-Alerts in Slack for the structured alert payload."
           echo "Dashboard: ${{ secrets.GRAFANA_URL }}/d/dora-metrics"
