@@ -47,6 +47,10 @@ jobs:
             
             # Navigate to the explicit application directory path
             cd /opt/demo-app/app
+
+             # Clean untracked files and reset to HEAD
+            git clean -fd
+            git reset --hard HEAD
             
             # Pull the latest changes from main
             git pull origin main
