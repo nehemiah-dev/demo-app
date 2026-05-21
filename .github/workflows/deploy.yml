@@ -118,7 +118,7 @@ jobs:
             INCIDENT_DURATION=0
           fi
 
-          cat <<EOF | curl --silent --max-time 10 --data-binary @- \
+          cat <<EOF | curl -L --silent --max-time 10 --data-binary @- \
             "${PUSHGATEWAY_URL}/metrics/job/github_actions/instance/${RUN_ID}"
           # HELP github_actions_deployments_total Total deployment count by result
           # TYPE github_actions_deployments_total counter
