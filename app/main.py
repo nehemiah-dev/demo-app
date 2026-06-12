@@ -1,5 +1,5 @@
 """
-FastAPI demo app — instrumented with OpenTelemetry.
+FastAPI app — instrumented with OpenTelemetry.
 Emits traces to Tempo via OTel Collector, logs to Loki via OTel Collector,
 and exposes Prometheus metrics via prometheus-fastapi-instrumentator.
 """
@@ -23,14 +23,14 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from prometheus_fastapi_instrumentator import Instrumentator
 
 # ── Shared resource ───────────────────────────────────────────────────────────
-resource = Resource.create({"service.name": "demo-app", "service.version": "1.0.0"})
+resource = Resource.create({"service.name": "ObserveX App", "service.version": "1.0.0"})
 
 # ── Tracing setup ─────────────────────────────────────────────────────────────
 tracer_provider = TracerProvider(resource=resource)
 otlp_trace_exporter = OTLPSpanExporter(endpoint="http://localhost:4317", insecure=True)
 tracer_provider.add_span_processor(BatchSpanProcessor(otlp_trace_exporter))
 trace.set_tracer_provider(tracer_provider)
-tracer = trace.get_tracer("demo-app")
+tracer = trace.get_tracer("ObserveX App")
 
 # ── Logging setup ─────────────────────────────────────────────────────────────
 logger_provider = LoggerProvider(resource=resource)
@@ -50,10 +50,10 @@ logging.basicConfig(
 otel_handler = LoggingHandler(level=logging.INFO, logger_provider=logger_provider)
 logging.getLogger().addHandler(otel_handler)
 
-log = logging.getLogger("demo-app")
+log = logging.getLogger("app")
 
 # ── App ───────────────────────────────────────────────────────────────────────
-app = FastAPI(title="LGTM Demo App", version="1.0.0")
+app = FastAPI(title="ObserveX App", version="1.0.0")
 
 Instrumentator().instrument(app).expose(app)
 FastAPIInstrumentor.instrument_app(app)
@@ -64,7 +64,7 @@ FastAPIInstrumentor.instrument_app(app)
 @app.get("/")
 def root():
     log.info("root endpoint hit")
-    return {"status": "ok", "service": "demo-app"}
+    return {"status": "ok", "service": "observeX"}
 
 
 @app.get("/items/{item_id}")
