@@ -17,19 +17,17 @@ processors:
         value: service.name, deployment.environment
 
 exporters:
-  # TODO: replace with your observability server IP
+
   otlp/tempo:
-    endpoint: <OBSERVABILITY_SERVER_IP>:4317
+    endpoint: http://observex.duckdns.org:4317
     tls:
       insecure: true
 
-  # TODO: replace with your observability server IP
   loki:
-    endpoint: http://<OBSERVABILITY_SERVER_IP>:3100/loki/api/v1/push
+    endpoint: http://observex.duckdns.org:3100/loki/api/v1/push
 
-  # TODO: replace with your observability server IP
   prometheusremotewrite:
-    endpoint: http://<OBSERVABILITY_SERVER_IP>:9090/api/v1/write
+    endpoint: http://observex.duckdns.org:9090/api/v1/write
 
   logging:
     verbosity: normal
