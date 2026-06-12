@@ -110,7 +110,7 @@ UNIT
 log "Node Exporter configured"
 
 # ── OTel Collector ────────────────────────────────────────────────────────────
-OTEL_VERSION="0.97.0"
+OTEL_VERSION="0.154.0"
 if ! install_binary otelcol; then
     log "Installing OTel Collector ${OTEL_VERSION}..."
     (
@@ -220,7 +220,7 @@ server {
     location /metrics {
         allow  100.54.109.191;
         deny   all;
-        proxy_pass http://localhost:8889;
+        proxy_pass http://localhost:4317;
     }
 }
 CONFIG
@@ -265,7 +265,7 @@ done
 
 log "======================================"
 log "Installation complete"
-log "App:          http://localhost:80"
+log "App:          http://localhost:8080"
 log "Node Exporter: http://localhost:9100"
 log "OTel Collector: http://localhost:4317"
 log "======================================"
